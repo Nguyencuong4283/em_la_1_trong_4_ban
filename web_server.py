@@ -195,7 +195,38 @@ async def get_logs(request: Request):
             else:
                 await asyncio.sleep(0.1)
                 
-    return StreamingResponse(log_generator(), media_type="text/event-stream")
+@app.get("/api/update-check")
+def check_updates():
+    import urllib.request
+    version_path = os.path.join(os.path.dirname(__file__), "version.txt")
+    
+    local_version = "1.2.2"
+    if os.path.exists(version_path):
+        try:
+            with open(version_path, "r", encoding="utf-8") as f:
+                local_version = f.read().strip()
+        except Exception:
+            pass
+            
+    url = "https://raw.githubusercontent.com/Nguyencuong4283/em_la_1_trong_4_ban/main/version.txt"
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=3) as response:
+            remote_version = response.read().decode('utf-8').strip()
+            if remote_version and remote_version != local_version:
+                return {
+                    "has_update": True,
+                    "local_version": local_version,
+                    "remote_version": remote_version
+                }
+    except Exception:
+        pass
+        
+    return {
+        "has_update": False,
+        "local_version": local_version,
+        "remote_version": local_version
+    }
 
 if __name__ == "__main__":
     import uvicorn

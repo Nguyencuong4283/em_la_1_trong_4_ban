@@ -19,6 +19,36 @@ import argparse
 import time
 from playwright.sync_api import sync_playwright
 
+def check_for_updates():
+    """
+    Kiểm tra xem có bản cập nhật mới trên GitHub hay không.
+    """
+    import urllib.request
+    version_path = os.path.join(os.path.dirname(__file__), "version.txt")
+    
+    local_version = "1.2.2"
+    if os.path.exists(version_path):
+        try:
+            with open(version_path, "r", encoding="utf-8") as f:
+                local_version = f.read().strip()
+        except Exception:
+            pass
+            
+    url = "https://raw.githubusercontent.com/Nguyencuong4283/em_la_1_trong_4_ban/main/version.txt"
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=3) as response:
+            remote_version = response.read().decode('utf-8').strip()
+            if remote_version and remote_version != local_version:
+                print("\n" + "="*58)
+                print(f"[!] PHÁT HIỆN BẢN CẬP NHẬT MỚI: v{remote_version} (Hiện tại: v{local_version})")
+                print("[!] Vui lòng chạy lệnh 'git pull' để cập nhật tính năng mới nhất.")
+                print("="*58 + "\n")
+                return remote_version
+    except Exception:
+        pass
+    return None
+
 def load_config():
     config_path = os.path.join(os.path.dirname(__file__), "config.json")
     default_config = {
@@ -323,6 +353,7 @@ def ensure_registration_page(page, target_url):
     print(f"[i] Cảnh báo: Vẫn chưa ở trang đăng ký học phần (URL hiện tại: {page.url}).")
 
 def main():
+    check_for_updates()
     parser = argparse.ArgumentParser(description="UIT Class Registration Auto-Ticking Tool")
     parser.add_argument("--test", action="store_true", help="Chạy chế độ thử nghiệm với trang mock_register.html cục bộ")
     parser.add_argument("--mode", type=str, default=None, choices=["1", "2"], help="Chế độ hoạt động (1: Auto-pilot, 2: Manual)")

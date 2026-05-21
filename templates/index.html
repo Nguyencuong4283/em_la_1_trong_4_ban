@@ -440,6 +440,49 @@
         .toast.show {
             transform: translateY(0);
         }
+
+        /* Update Banner */
+        .update-banner {
+            display: none;
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(239, 68, 68, 0.12));
+            border: 1px solid rgba(245, 158, 11, 0.25);
+            border-radius: 16px;
+            padding: 1rem 1.5rem;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(12px);
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .update-banner-content {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+            min-width: 280px;
+        }
+
+        .update-banner-close {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 6px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            outline: none;
+            transition: transform 0.2s, background-color 0.2s;
+        }
+
+        .update-banner-close:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
+            transform: scale(1.1);
+        }
     </style>
 </head>
 
@@ -455,6 +498,27 @@
                 <span id="statusText">Đang tải trạng thái...</span>
             </div>
         </header>
+
+        <!-- Update Banner -->
+        <div id="updateBanner" class="update-banner">
+            <div class="update-banner-content">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" style="flex-shrink: 0;">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/>
+                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+                <div>
+                    <strong style="color: #f59e0b; font-size: 1rem;">Phát hiện phiên bản mới!</strong>
+                    <p style="color: var(--text-primary); font-size: 0.9rem; margin-top: 2px;">Phiên bản mới <span id="remoteVersionText" style="font-weight: 800; color: #f59e0b;">vX.Y.Z</span> đã sẵn sàng (bạn đang dùng <span id="localVersionText">vA.B.C</span>). Hãy chạy lệnh <code style="background: rgba(0,0,0,0.4); padding: 2px 6px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: #34d399;">git pull</code> để cập nhật.</p>
+                </div>
+            </div>
+            <button onclick="document.getElementById('updateBanner').remove()" class="update-banner-close" aria-label="Đóng thông báo">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
 
         <div class="dashboard-grid">
             <!-- Cấu hình (Cột trái) -->
@@ -750,9 +814,25 @@
             }
         });
 
+        // Kiểm tra cập nhật từ GitHub
+        async function checkUpdates() {
+            try {
+                const res = await fetch('/api/update-check');
+                const data = await res.json();
+                if (data.has_update) {
+                    document.getElementById('remoteVersionText').textContent = 'v' + data.remote_version;
+                    document.getElementById('localVersionText').textContent = 'v' + data.local_version;
+                    document.getElementById('updateBanner').style.display = 'flex';
+                }
+            } catch (err) {
+                console.error('Lỗi khi kiểm tra cập nhật:', err);
+            }
+        }
+
         // Tải cấu hình khi khởi động và theo dõi trạng thái mỗi giây
         loadConfig();
         updateStatus();
+        checkUpdates();
         setInterval(updateStatus, 1000);
     </script>
 </body>
