@@ -1,0 +1,10 @@
+{
+  "target_url": "https://dkhp.uit.edu.vn",
+  "username": "",
+  "password": "",
+  "class_codes": [],
+  "headless": false,
+  "auto_click_submit": true,
+  "scan_interval_ms": 5000,
+  "submit_delay_ms": 1500
+}
