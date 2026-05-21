@@ -370,7 +370,7 @@ def main():
     headless = config.get("headless", False)
     auto_click_submit = config.get("auto_click_submit", True)
     scan_interval_ms = config.get("scan_interval_ms", 200)
-    submit_delay_ms = config.get("submit_delay_ms", 5000)
+    submit_delay_ms = max(1000, config.get("submit_delay_ms", 5000))
 
     if args.test:
         current_dir = os.path.dirname(os.path.abspath(__file__))

@@ -23,7 +23,7 @@ from typing import List
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 app = FastAPI(title="Tứ kỵ sỹ khải huyền")
 
@@ -43,7 +43,7 @@ class ConfigSchema(BaseModel):
     headless: bool
     auto_click_submit: bool
     scan_interval_ms: int
-    submit_delay_ms: int
+    submit_delay_ms: int = Field(ge=1000)
 
 def load_config_data():
     default_config = {
@@ -128,9 +128,7 @@ def start_process(params: dict = None):
         log_history.append(f"[web] Đang khởi động Playwright Browser ({'Chế độ THỬ NGHIỆM' if test_mode else 'Chế độ THẬT'})...\n")
         
         # Đường dẫn python của venv
-        venv_python = os.path.join(os.path.dirname(os.path.abspath(__file__)), "venv", "bin", "python3")
-        if not os.path.exists(venv_python):
-            venv_python = "python3" # fallback
+        venv_python = sys.executable
             
         cmd = [venv_python, "-u", "register.py", "--mode", "1", "--non-interactive"]
         if test_mode:
@@ -194,6 +192,8 @@ async def get_logs(request: Request):
                 last_index += 1
             else:
                 await asyncio.sleep(0.1)
+
+    return StreamingResponse(log_generator(), media_type="text/event-stream")
                 
 @app.get("/api/update-check")
 def check_updates():
