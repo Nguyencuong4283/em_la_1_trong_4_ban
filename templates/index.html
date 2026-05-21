@@ -587,6 +587,14 @@
                     </label>
                 </div>
 
+                <div class="toggle-group">
+                    <label for="waitEmptySlot">Chờ slot trống (F5 ngẫu nhiên 20-30s)</label>
+                    <label class="switch">
+                        <input type="checkbox" id="waitEmptySlot">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
                 <button class="btn btn-primary" id="saveBtn">Lưu cấu hình</button>
             </div>
 
@@ -673,6 +681,7 @@
                 document.getElementById('submitDelay').value = data.submit_delay_ms || 5000;
                 document.getElementById('headless').checked = !!data.headless;
                 document.getElementById('autoSubmit').checked = !!data.auto_click_submit;
+                document.getElementById('waitEmptySlot').checked = !!data.wait_for_empty_slot;
             } catch (err) {
                 showToast('Không thể tải cấu hình!', true);
             }
@@ -698,7 +707,8 @@
                 scan_interval_ms: parseInt(document.getElementById('scanInterval').value) || 200,
                 submit_delay_ms: submit_delay_ms,
                 headless: document.getElementById('headless').checked,
-                auto_click_submit: document.getElementById('autoSubmit').checked
+                auto_click_submit: document.getElementById('autoSubmit').checked,
+                wait_for_empty_slot: document.getElementById('waitEmptySlot').checked
             };
 
             try {

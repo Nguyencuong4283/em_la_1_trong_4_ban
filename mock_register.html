@@ -135,25 +135,106 @@
 </div>
 
 <script>
-    // Reset non-disabled and non-pre-checked checkboxes
-    document.querySelectorAll('input[type="checkbox"]').forEach(c => {
-        if (!c.disabled && c.id !== 'class3') {
-            c.checked = false;
+    // Giả lập mở slot trống sau 2 lần tải lại trang (lần tải thứ 3)
+    let reloadCount = parseInt(sessionStorage.getItem('mock_reload_count') || '0');
+    reloadCount += 1;
+    sessionStorage.setItem('mock_reload_count', reloadCount);
+
+    if (reloadCount >= 3) {
+        const class4 = document.getElementById('class4');
+        let registered = JSON.parse(sessionStorage.getItem('mock_registered_classes') || '[]');
+        if (class4 && !registered.includes('class4')) {
+            class4.removeAttribute('disabled');
+            const row = class4.closest('tr');
+            if (row) {
+                const statusTd = row.querySelector('td:nth-child(3)');
+                if (statusTd) {
+                    statusTd.innerHTML = 'Lịch sử Đảng <span style="color: green; font-weight: bold;">(Còn 1 chỗ - Mock mở slot)</span>';
+                }
+            }
         }
-    });
+    }
+
+    // Khôi phục trạng thái đăng nhập và trang hiện tại
+    let loggedIn = sessionStorage.getItem('mock_logged_in') === 'true';
+    let onRegPage = sessionStorage.getItem('mock_on_registration') === 'true';
+
+    if (loggedIn) {
+        document.getElementById('login-form-container').style.display = 'none';
+        if (onRegPage) {
+            document.getElementById('registration-content').style.display = 'block';
+        } else {
+            document.getElementById('dashboard-content').style.display = 'block';
+        }
+    } else {
+        document.getElementById('login-form-container').style.display = 'block';
+        document.getElementById('dashboard-content').style.display = 'none';
+        document.getElementById('registration-content').style.display = 'none';
+    }
 
     function doLogin() {
+        sessionStorage.setItem('mock_logged_in', 'true');
         document.getElementById('login-form-container').style.display = 'none';
         document.getElementById('dashboard-content').style.display = 'block';
     }
 
     function goRegistration() {
+        sessionStorage.setItem('mock_on_registration', 'true');
         document.getElementById('dashboard-content').style.display = 'none';
         document.getElementById('registration-content').style.display = 'block';
     }
 
+    function updateRegisteredStates() {
+        let registered = JSON.parse(sessionStorage.getItem('mock_registered_classes') || '[]');
+        
+        // Lớp class3 mặc định luôn là đã đăng ký
+        if (!registered.includes('class3')) {
+            registered.push('class3');
+            sessionStorage.setItem('mock_registered_classes', JSON.stringify(registered));
+        }
+
+        registered.forEach(id => {
+            const checkbox = document.getElementById(id);
+            if (checkbox) {
+                checkbox.checked = true;
+                checkbox.disabled = true;
+                
+                const row = checkbox.closest('tr');
+                if (row) {
+                    const nameTd = row.querySelector('td:nth-child(3)');
+                    if (nameTd && !nameTd.innerHTML.includes('(Đã đăng ký)')) {
+                        let text = nameTd.textContent.replace('(Hết chỗ)', '').replace('(Còn 1 chỗ - Mock mở slot)', '').trim();
+                        nameTd.innerHTML = text + ' <span style="color: green; font-weight: bold;">(Đã đăng ký)</span>';
+                    }
+                }
+            }
+        });
+    }
+
+    // Reset các checkbox chưa đăng ký và không bị disabled
+    document.querySelectorAll('input[type="checkbox"]').forEach(c => {
+        let registered = JSON.parse(sessionStorage.getItem('mock_registered_classes') || '[]');
+        if (!registered.includes(c.id) && !c.disabled) {
+            c.checked = false;
+        }
+    });
+
+    updateRegisteredStates();
+
     function submitReg() {
         document.getElementById('message').style.display = 'block';
+        
+        let registered = JSON.parse(sessionStorage.getItem('mock_registered_classes') || '[]');
+        document.querySelectorAll('input[type="checkbox"]').forEach(c => {
+            if (c.checked) {
+                if (!registered.includes(c.id)) {
+                    registered.push(c.id);
+                }
+            }
+        });
+        sessionStorage.setItem('mock_registered_classes', JSON.stringify(registered));
+        
+        updateRegisteredStates();
     }
 </script>
 </body>

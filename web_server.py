@@ -44,6 +44,7 @@ class ConfigSchema(BaseModel):
     auto_click_submit: bool
     scan_interval_ms: int
     submit_delay_ms: int = Field(ge=1000)
+    wait_for_empty_slot: bool = False
 
 def load_config_data():
     default_config = {
@@ -54,7 +55,8 @@ def load_config_data():
         "headless": False,
         "auto_click_submit": True,
         "scan_interval_ms": 5000,
-        "submit_delay_ms": 1500
+        "submit_delay_ms": 1500,
+        "wait_for_empty_slot": False
     }
     if not os.path.exists(CONFIG_PATH):
         try:
@@ -66,7 +68,9 @@ def load_config_data():
         
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+            # Trộn với cấu hình mặc định đề phòng thiếu trường mới
+            return {**default_config, **data}
     except Exception:
         return default_config
 

@@ -6,5 +6,6 @@
   "headless": false,
   "auto_click_submit": true,
   "scan_interval_ms": 5000,
-  "submit_delay_ms": 1500
+  "submit_delay_ms": 1500,
+  "wait_for_empty_slot": false
 }

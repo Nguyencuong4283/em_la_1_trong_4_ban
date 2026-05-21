@@ -17,6 +17,7 @@ ensure_venv()
 import json
 import argparse
 import time
+import random
 from playwright.sync_api import sync_playwright
 
 def check_for_updates():
@@ -76,6 +77,43 @@ def load_config():
     except Exception as e:
         print(f"[-] Không thể đọc tệp cấu hình config.json: {e}")
         return default_config
+
+
+def send_desktop_notification(title, message):
+    """
+    Gửi thông báo trực tiếp đến màn hình desktop của người dùng.
+    Hỗ trợ macOS, Windows và Linux.
+    """
+    import platform
+    import shutil
+    import subprocess
+    
+    title_escaped = title.replace('"', '\\"')
+    message_escaped = message.replace('"', '\\"')
+    
+    try:
+        system = platform.system()
+        if system == "Darwin":  # macOS
+            cmd = f'osascript -e \'display notification "{message_escaped}" with title "{title_escaped}" sound name "Glass"\''
+            subprocess.run(cmd, shell=True, capture_output=True)
+        elif system == "Windows":  # Windows
+            ps_script = f'''
+            [void] [System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms")
+            $objNotifyIcon = New-Object System.Windows.Forms.NotifyIcon
+            $objNotifyIcon.Icon = [System.Drawing.SystemIcons]::Information
+            $objNotifyIcon.BalloonTipIcon = "Info"
+            $objNotifyIcon.BalloonTipTitle = "{title_escaped}"
+            $objNotifyIcon.BalloonTipText = "{message_escaped}"
+            $objNotifyIcon.Visible = $True
+            $objNotifyIcon.ShowBalloonTip(5000)
+            '''
+            subprocess.run(["powershell", "-Command", ps_script], capture_output=True)
+        else:  # Linux
+            if shutil.which("notify-send"):
+                subprocess.run(["notify-send", title, message])
+    except Exception as e:
+        print(f"[-] Không thể gửi thông báo desktop: {e}")
+
 
 
 def find_checkbox_for_class(page, class_code):
@@ -371,6 +409,7 @@ def main():
     auto_click_submit = config.get("auto_click_submit", True)
     scan_interval_ms = config.get("scan_interval_ms", 200)
     submit_delay_ms = max(1000, config.get("submit_delay_ms", 5000))
+    wait_for_empty_slot = config.get("wait_for_empty_slot", False)
 
     if args.test:
         current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -384,6 +423,7 @@ def main():
 
     print(f"[i] Danh sách mã lớp cần đăng ký: {class_codes}")
     print(f"[i] Tần suất quét: {scan_interval_ms}ms")
+    print(f"[i] Chờ slot trống: {'Bật (F5 ngẫu nhiên 20-30s khi hết slot)' if wait_for_empty_slot else 'Tắt'}")
     print(f"[i] Độ trễ tự động bấm nút đăng ký: {submit_delay_ms / 1000}s")
 
     with sync_playwright() as p:
@@ -423,6 +463,14 @@ def main():
             last_stats_str = ""
             last_print_time = 0
             
+            # Khởi tạo biến theo dõi cho chờ slot trống
+            previously_registered = set()
+            previously_full = set()
+            print_not_found_notified = set()
+            last_reload_time = time.time()
+            current_reload_interval = random.uniform(20.0, 30.0)
+            init_registered_scan = True
+            
             try:
                 while True:
                     # Kiểm tra xem có cần tự động đăng nhập lại không (đề phòng phiên đăng nhập hết hạn)
@@ -446,6 +494,29 @@ def main():
                             continue
                         status = get_class_status(page, code)
                         stats[status].append(code)
+
+                    # Khởi tạo trạng thái đăng ký ban đầu từ lần quét đầu tiên để tránh trùng lặp thông báo
+                    if init_registered_scan:
+                        previously_registered = set(stats["REGISTERED"])
+                        init_registered_scan = False
+
+                    # Cập nhật danh sách các lớp từng bị hết slot
+                    for code in stats["OUT_OF_SLOTS"]:
+                        previously_full.add(code)
+
+                    # In cảnh báo mã lớp không tồn tại một lần duy nhất
+                    for code in stats["NOT_FOUND"]:
+                        if code not in print_not_found_notified:
+                            print(f"[-] MÃ LỚP KHÔNG TỒN TẠI: Lớp '{code}' không tìm thấy trên trang chọn môn học.")
+                            print_not_found_notified.add(code)
+
+                    # Phát hiện các lớp vừa đăng ký thành công mới để gửi thông báo desktop
+                    new_registrations = [code for code in stats["REGISTERED"] if code not in previously_registered]
+                    for code in new_registrations:
+                        msg = f"Đã đăng ký thành công lớp {code}!"
+                        print(f"[+] THÔNG BÁO: {msg}")
+                        send_desktop_notification("UIT Auto Registration", msg)
+                        previously_registered.add(code)
                         
                     # Chuỗi tóm tắt trạng thái
                     stats_str = f"Đăng ký: {len(stats['REGISTERED'])} | Hết slot: {len(stats['OUT_OF_SLOTS'])} | Có sẵn: {len(stats['AVAILABLE'])} | Chưa thấy: {len(stats['NOT_FOUND'])}"
@@ -466,13 +537,22 @@ def main():
                         last_stats_str = stats_str
                         last_print_time = current_time
                         
-                    # Cơ chế tự ngắt thông minh khi tất cả lớp đã hoàn thành (đăng ký thành công hoặc hết slot)
-                    if len(stats["REGISTERED"]) + len(stats["OUT_OF_SLOTS"]) == total_targets:
+                    # Cơ chế tự ngắt thông minh khi tất cả lớp đã hoàn thành
+                    if wait_for_empty_slot:
+                        # Nếu bật chờ slot: dừng khi tất cả lớp mục tiêu đều đã được REGISTERED hoặc NOT_FOUND
+                        stop_condition = (len(stats["REGISTERED"]) + len(stats["NOT_FOUND"]) == total_targets)
+                    else:
+                        # Nếu tắt chờ slot: dừng khi tất cả lớp là REGISTERED, OUT_OF_SLOTS hoặc NOT_FOUND
+                        stop_condition = (len(stats["REGISTERED"]) + len(stats["OUT_OF_SLOTS"]) + len(stats["NOT_FOUND"]) == total_targets)
+
+                    if stop_condition:
                         print("\n=================== HOÀN THÀNH QUÉT ===================")
                         print(f"[+] Tất cả lớp học mục tiêu đã được xử lý (Tổng số: {total_targets})")
                         print(f"    - Đã đăng ký thành công: {len(stats['REGISTERED'])} lớp {stats['REGISTERED']}")
                         if stats["OUT_OF_SLOTS"]:
                             print(f"    - Không thể đăng ký (hết slot): {len(stats['OUT_OF_SLOTS'])} lớp {stats['OUT_OF_SLOTS']}")
+                        if stats["NOT_FOUND"]:
+                            print(f"    - Không tồn tại trên hệ thống: {len(stats['NOT_FOUND'])} lớp {stats['NOT_FOUND']}")
                         print("[+] Chương trình tự động dừng và đóng trình duyệt.")
                         print("=======================================================")
                         registration_completed = True
@@ -480,6 +560,14 @@ def main():
                         
                     found_any_new = False
                     for code in stats["AVAILABLE"]:
+                        # Bỏ qua nếu lớp đã được đăng ký thành công
+                        if code in previously_registered:
+                            continue
+                            
+                        # Nếu lớp này từng hết slot và bây giờ có sẵn, hiển thị thông báo phát hiện slot trống
+                        if code in previously_full:
+                            print(f"[+] PHÁT HIỆN: Lớp '{code}' từng hết slot nay đã có chỗ trống!")
+
                         checkbox = find_checkbox_for_class(page, code)
                         if checkbox:
                             try:
@@ -504,6 +592,21 @@ def main():
                         else:
                             print("[-] Không tìm thấy nút Xác nhận. Vui lòng bấm thủ công trên trình duyệt.")
                             
+                    # Tự động tải lại trang (F5) nếu bật chờ slot trống và có lớp bị hết slot
+                    # Chỉ thực hiện tải lại trang khi không có lớp nào có sẵn để tick (AVAILABLE)
+                    if not stats["AVAILABLE"] and wait_for_empty_slot and stats["OUT_OF_SLOTS"]:
+                        current_time = time.time()
+                        if current_time - last_reload_time >= current_reload_interval:
+                            print(f"[i] Đang tự động tải lại trang (F5) để quét lại slot trống...")
+                            print(f"    (Thời gian F5 tiếp theo ngẫu nhiên: {current_reload_interval:.2f}s)")
+                            try:
+                                page.reload()
+                                last_reload_time = current_time
+                                current_reload_interval = random.uniform(20.0, 30.0)
+                                page.wait_for_timeout(2000)  # Đợi 2 giây sau F5 để trang bắt đầu hiển thị
+                            except Exception as e:
+                                print(f"[-] Lỗi khi tải lại trang (F5): {e}")
+
                     page.wait_for_timeout(scan_interval_ms)
             except KeyboardInterrupt:
                 print("\n[i] Đã dừng quét liên tục.")
@@ -558,7 +661,11 @@ def main():
                 print(f"[i] Đợi {submit_delay_ms / 1000} giây trước khi tự động bấm nút đăng ký...")
                 page.wait_for_timeout(submit_delay_ms)
                 print("[i] Đang tự động bấm nút đăng ký...")
-                click_submit_button(page)
+                if click_submit_button(page):
+                    page.wait_for_timeout(2000)  # Đợi 2 giây để hệ thống xử lý và trang cập nhật
+                    for code in class_codes:
+                        if get_class_status(page, code) == "REGISTERED":
+                            send_desktop_notification("UIT Auto Registration", f"Đăng ký thành công lớp {code}!")
 
         if args.non_interactive:
             if not registration_completed:
