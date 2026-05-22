@@ -136,9 +136,13 @@ def start_process(params: dict = None):
         # Đường dẫn python của venv
         venv_python = sys.executable
             
-        cmd = [venv_python, "-u", "register.py", "--mode", "1", "--non-interactive"]
+        cmd = [venv_python, "-u", "-X", "utf8", "register.py", "--mode", "1", "--non-interactive"]
         if test_mode:
             cmd.append("--test")
+            
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
             
         try:
             current_process = subprocess.Popen(
@@ -147,7 +151,9 @@ def start_process(params: dict = None):
                 stderr=subprocess.STDOUT,
                 stdin=subprocess.PIPE,
                 text=True,
+                encoding="utf-8",
                 bufsize=1,
+                env=env,
                 cwd=os.path.dirname(os.path.abspath(__file__))
             )
             
