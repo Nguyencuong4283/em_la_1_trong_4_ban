@@ -498,8 +498,8 @@ def check_and_handle_load_failure(page):
     current_url = page.url.lower()
     is_registration_url = any(keyword in current_url for keyword in ["dang-ky", "dangky", "registration", "register", "mock_register.html"])
     
-    # Nếu không phải dashboard và (ở URL đăng ký hoặc không hiển thị thanh điều hướng/trang trắng/502)
-    if not dashboard_visible or is_registration_url:
+    # Chỉ thực hiện kiểm tra lỗi tải khi đang ở URL/tab đăng ký học phần
+    if is_registration_url:
         # Chờ thêm 3 giây phòng trường hợp mạng chậm trang đang tải dở
         page.wait_for_timeout(3000)
         if is_on_registration_page(page):
@@ -531,7 +531,10 @@ def ensure_registration_page(page, target_url):
     except Exception:
         pass
 
-    if is_on_registration_page(page):
+    current_url = page.url.lower()
+    is_registration_url = any(keyword in current_url for keyword in ["dang-ky", "dangky", "registration", "register", "mock_register.html"])
+    
+    if is_registration_url or is_on_registration_page(page):
         return
 
     print("[i] Chưa vào trang đăng ký học phần. Đang quét liên kết chuyển trang...")
