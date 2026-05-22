@@ -97,6 +97,11 @@
             font-weight: 600;
         }
 
+        .status-container:hover {
+            background: rgba(255, 255, 255, 0.1);
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.05);
+        }
+
         .status-dot {
             width: 10px;
             height: 10px;
@@ -493,9 +498,18 @@
                 <h1>UIA và tứ kỵ sĩ</h1>
                 <p>Auto version of f12 tool</p>
             </div>
-            <div class="status-container">
-                <span class="status-dot" id="statusDot"></span>
-                <span id="statusText">Đang tải trạng thái...</span>
+            <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                <div class="status-container" id="notificationStatusContainer" style="cursor: pointer; border: 1px solid var(--card-border); transition: all 0.3s ease;">
+                    <svg id="notiIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 4px; transition: stroke 0.3s ease;">
+                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                        <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                    </svg>
+                    <span id="notificationStatusText" style="transition: color 0.3s ease;">Đang kiểm tra thông báo...</span>
+                </div>
+                <div class="status-container">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span id="statusText">Đang tải trạng thái...</span>
+                </div>
             </div>
         </header>
 
@@ -663,6 +677,84 @@
         const toast = document.getElementById('toast');
 
         let logSource = null;
+        let allowLogsNotification = false;
+
+        // Cấu hình thông báo desktop
+        const notificationStatusContainer = document.getElementById('notificationStatusContainer');
+        const notificationStatusText = document.getElementById('notificationStatusText');
+
+        function sendDesktopNotification(title, body) {
+            if (!("Notification" in window)) return;
+            if (Notification.permission === "granted") {
+                try {
+                    new Notification(title, {
+                        body: body
+                    });
+                } catch (e) {
+                    console.error("Lỗi hiển thị thông báo desktop:", e);
+                }
+            }
+        }
+
+        function updateNotificationUI() {
+            if (!("Notification" in window)) {
+                notificationStatusText.textContent = "Không hỗ trợ thông báo";
+                notificationStatusContainer.style.opacity = "0.6";
+                notificationStatusContainer.style.cursor = "not-allowed";
+                return;
+            }
+
+            if (Notification.permission === "granted") {
+                notificationStatusText.textContent = "Thông báo: Bật";
+                notificationStatusContainer.style.borderColor = "var(--success)";
+                notificationStatusContainer.style.color = "var(--success)";
+                document.getElementById('notiIcon').style.stroke = "var(--success)";
+            } else if (Notification.permission === "denied") {
+                notificationStatusText.textContent = "Thông báo: Bị chặn";
+                notificationStatusContainer.style.borderColor = "var(--danger)";
+                notificationStatusContainer.style.color = "var(--danger)";
+                document.getElementById('notiIcon').style.stroke = "var(--danger)";
+            } else {
+                notificationStatusText.textContent = "Bật thông báo";
+                notificationStatusContainer.style.borderColor = "var(--accent-primary)";
+                notificationStatusContainer.style.color = "var(--text-primary)";
+                document.getElementById('notiIcon').style.stroke = "var(--accent-primary)";
+            }
+        }
+
+        notificationStatusContainer.addEventListener('click', () => {
+            if (!("Notification" in window)) return;
+            
+            if (Notification.permission === "default") {
+                Notification.requestPermission().then(permission => {
+                    updateNotificationUI();
+                    if (permission === "granted") {
+                        sendDesktopNotification("UIA Auto Registration", "Đã bật thông báo desktop thành công!");
+                    }
+                });
+            } else if (Notification.permission === "denied") {
+                showToast("Vui lòng mở cài đặt trình duyệt để cho phép quyền thông báo cho trang này.", true);
+            } else if (Notification.permission === "granted") {
+                sendDesktopNotification("UIA Auto Registration", "Thông báo desktop đang hoạt động tốt!");
+            }
+        });
+
+        function initNotifications() {
+            updateNotificationUI();
+            if (!("Notification" in window)) return;
+
+            if (Notification.permission === "default") {
+                Notification.requestPermission().then(permission => {
+                    updateNotificationUI();
+                    if (permission === "granted") {
+                        sendDesktopNotification("UIA Auto Registration", "Chào mừng! Đã bật thông báo desktop thành công.");
+                    }
+                });
+            } else if (Notification.permission === "granted") {
+                // Kích hoạt F5: Thông báo desktop cho người dùng biết dashboard tải xong
+                sendDesktopNotification("UIA Auto Registration", "Dashboard đã tải lại (F5) thành công!");
+            }
+        }
 
         // Hiển thị Toast thông báo
         function showToast(message, isError = false) {
@@ -790,6 +882,10 @@
 
             terminalBody.innerHTML = '';
             logSource = new EventSource('/api/logs');
+            allowLogsNotification = false;
+            setTimeout(() => {
+                allowLogsNotification = true;
+            }, 800);
 
             logSource.onmessage = function (event) {
                 const data = JSON.parse(event.data);
@@ -815,6 +911,18 @@
 
                 // Tự động cuộn xuống dưới cùng
                 terminalBody.scrollTop = terminalBody.scrollHeight;
+
+                // Gửi thông báo desktop cho các sự kiện quan trọng (chỉ khi không phải log cũ tải lại)
+                if (allowLogsNotification) {
+                    const cleanMsg = msg.replace(/\[i\]|\[\-\]|\[\+\]|\[web\]|\[OK\]/g, '').trim();
+                    if (msg.includes('F5') || msg.includes('tải lại trang') || msg.includes('reload')) {
+                        sendDesktopNotification("🔄 Tool Auto-Reload (F5)", cleanMsg);
+                    } else if (msg.includes('THÀNH CÔNG') || msg.includes('thành công') || msg.includes('Đăng ký thành công')) {
+                        sendDesktopNotification("🎉 Đăng Ký Thành Công!", cleanMsg);
+                    } else if (msg.includes('Lỗi') || msg.includes('[-]')) {
+                        sendDesktopNotification("⚠️ Cảnh Báo Lỗi Tool", cleanMsg);
+                    }
+                }
             };
 
             logSource.onerror = function () {
@@ -876,6 +984,7 @@
         loadConfig();
         updateStatus();
         checkUpdates();
+        initNotifications();
         setInterval(updateStatus, 1000);
     </script>
 </body>
