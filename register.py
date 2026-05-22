@@ -60,7 +60,8 @@ def load_config():
         "headless": False,
         "auto_click_submit": True,
         "scan_interval_ms": 5000,
-        "submit_delay_ms": 1500
+        "submit_delay_ms": 1500,
+        "open_time": ""
     }
     if not os.path.exists(config_path):
         try:
@@ -135,30 +136,42 @@ def find_checkbox_for_class(page, class_code):
                 if not element.is_visible():
                     continue
                 
-                # Đi lên các phần tử cha để tìm checkbox cùng hàng (tr) hoặc cùng nhóm
+                # 1. Tìm phần tử hàng (TR hoặc tương đương) chứa class_code
+                row = None
                 for depth in range(1, 5):
                     ancestor = element.locator(f"xpath=./ancestor::*[position()={depth}]")
                     if ancestor.count() > 0:
-                        checkbox = ancestor.locator("input[type='checkbox']")
-                        if checkbox.count() > 0:
-                            return checkbox.first
-                        
-                        checkbox_role = ancestor.locator("[role='checkbox']")
-                        if checkbox_role.count() > 0:
-                            return checkbox_role.first
-                            
-                # Thử tìm thẻ input/checkbox là anh em (sibling)
-                parent = element.locator("xpath=..")
-                if parent.count() > 0:
-                    checkbox = parent.locator("input[type='checkbox']")
+                        is_row = ancestor.evaluate("el => el.tagName === 'TR' || el.getAttribute('role') === 'row' || (el.classList && el.classList.contains('row'))")
+                        if is_row:
+                            row = ancestor
+                            break
+                
+                # 2. Nếu tìm thấy hàng, tìm checkbox CHỈ bên trong hàng đó
+                if row:
+                    checkbox = row.locator("input[type='checkbox']")
                     if checkbox.count() > 0:
                         return checkbox.first
                     
-                    grandparent = parent.locator("xpath=..")
-                    if grandparent.count() > 0:
-                        checkbox = grandparent.locator("input[type='checkbox']")
-                        if checkbox.count() > 0:
-                            return checkbox.first
+                    checkbox_role = row.locator("[role='checkbox']")
+                    if checkbox_role.count() > 0:
+                        return checkbox_role.first
+                else:
+                    # 3. Fallback: Nếu không xác định được hàng, tìm ở parent/sibling trực tiếp nhưng tránh đi quá xa lên tbody/table
+                    parent = element.locator("xpath=..")
+                    if parent.count() > 0:
+                        parent_tag = parent.evaluate("el => el.tagName")
+                        if parent_tag not in ["TBODY", "TABLE"]:
+                            checkbox = parent.locator("input[type='checkbox']")
+                            if checkbox.count() > 0:
+                                return checkbox.first
+                            
+                            grandparent = parent.locator("xpath=..")
+                            if grandparent.count() > 0:
+                                grandparent_tag = grandparent.evaluate("el => el.tagName")
+                                if grandparent_tag not in ["TBODY", "TABLE"]:
+                                    checkbox = grandparent.locator("input[type='checkbox']")
+                                    if checkbox.count() > 0:
+                                        return checkbox.first
         except Exception:
             pass
             
@@ -273,6 +286,84 @@ def get_row_text_for_class(page, class_code):
             pass
     return None
 
+def wait_until_open_time(page, open_time_str):
+    """
+    Chờ cho đến khi tới giờ mở cổng đăng ký (định dạng HH:MM hoặc HH:MM:SS).
+    Trong thời gian chờ, in ra đếm ngược và giữ trình duyệt hiển thị ở trang đăng ký.
+    Khi đạt đến thời điểm, F5 reload trang 1 lần.
+    """
+    if not open_time_str:
+        return
+        
+    import datetime
+    try:
+        parts = list(map(int, open_time_str.split(":")))
+        if len(parts) == 2:
+            open_hour, open_minute = parts
+            open_second = 0
+        elif len(parts) == 3:
+            open_hour, open_minute, open_second = parts
+        else:
+            raise ValueError
+    except Exception:
+        print(f"[-] Định dạng giờ mở đăng ký không hợp lệ: '{open_time_str}'. Yêu cầu định dạng HH:MM hoặc HH:MM:SS. Bỏ qua chế độ hẹn giờ.")
+        return
+
+    now = datetime.datetime.now()
+    open_time = now.replace(hour=open_hour, minute=open_minute, second=open_second, microsecond=0)
+    
+    # Nếu giờ mở đăng ký nhỏ hơn giờ hiện tại (đã qua giờ mở trong ngày), ta không cần chờ
+    if now >= open_time:
+        return
+        
+    print(f"\n[>>>] ĐÃ BẬT CHẾ ĐỘ CHỜ GIỜ MỞ ĐĂNG KÝ: {open_time_str} [<<<]")
+    print(f"[i] Trình duyệt đang giữ kết nối ở trang đăng ký học phần...")
+    
+    # Vòng lặp đếm ngược giây
+    last_print_time = 0
+    while True:
+        now = datetime.datetime.now()
+        diff = open_time - now
+        seconds_left = int(diff.total_seconds())
+        if seconds_left <= 0:
+            break
+            
+        # In đếm ngược mỗi giây một lần
+        if seconds_left != last_print_time:
+            print(f"[i] Đang chờ mở cổng đăng ký. Đếm ngược: {seconds_left} giây...   ", end="\r")
+            last_print_time = seconds_left
+            
+        time.sleep(0.2)
+        
+    print("\n[+] ĐÃ ĐẾN GIỜ MỞ ĐĂNG KÝ! Đang tự động F5 tải lại trang...")
+    try:
+        page.reload()
+        page.wait_for_timeout(2000)
+    except Exception as e:
+        print(f"[-] Lỗi khi reload trang: {e}")
+
+def is_slots_full(row_text):
+    """
+    Kiểm tra xem lớp đã hết slot dựa trên tỉ số sĩ số trong văn bản hàng (ví dụ: 30/30).
+    """
+    if not row_text:
+        return False
+    import re
+    # Loại bỏ các chuỗi ngày tháng dạng DD/MM/YYYY hoặc DD/MM/YY để tránh so sánh nhầm ngày (ví dụ 20/07/2026)
+    text_clean = re.sub(r"\b\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{2,4}\b", "", row_text)
+    
+    # Tìm dạng số/số (ví dụ 30/30, 45/45, 30 / 30, v.v.)
+    matches = re.findall(r"(?<!/)\b(\d+)\s*/\s*(\d+)\b(?!/)", text_clean)
+    for current_str, total_str in matches:
+        try:
+            current = int(current_str)
+            total = int(total_str)
+            if total > 0 and current >= total:
+                return True
+        except ValueError:
+            pass
+    return False
+
 def get_class_status(page, class_code):
     """
     Đánh giá trạng thái hiện tại của một mã lớp:
@@ -288,8 +379,18 @@ def get_class_status(page, class_code):
         row_text = get_row_text_for_class(page, class_code)
         if row_text:
             row_text_lower = row_text.lower()
+            # Kiểm tra xem có từ khóa báo đăng ký thành công không
+            if any(kw in row_text_lower for kw in ["đã đăng ký", "đã đk", "registered", "đã chọn", "đã nhận"]):
+                return "REGISTERED"
+            # Kiểm tra xem có từ khóa báo hết slot không
             if any(kw in row_text_lower for kw in ["hết chỗ", "hết slot", "đầy", "sĩ số đầy", "hết hạn"]):
                 return "OUT_OF_SLOTS"
+            # Kiểm tra tỉ số slots (ví dụ 30/30)
+            if is_slots_full(row_text):
+                return "OUT_OF_SLOTS"
+            # Nếu không tìm thấy checkbox và không có dấu hiệu đã đăng ký nhưng lớp vẫn hiển thị,
+            # mặc định là lớp đã hết slot (hoặc không khả dụng để đăng ký)
+            return "OUT_OF_SLOTS"
         return "NOT_FOUND"
         
     try:
@@ -312,6 +413,8 @@ def get_class_status(page, class_code):
             if row_text:
                 row_text_lower = row_text.lower()
                 if any(kw in row_text_lower for kw in ["hết chỗ", "hết slot", "đầy", "sĩ số đầy"]):
+                    return "OUT_OF_SLOTS"
+                if is_slots_full(row_text):
                     return "OUT_OF_SLOTS"
             return "AVAILABLE"
 
@@ -343,6 +446,78 @@ def is_on_registration_page(page):
     except Exception:
         pass
         
+    return False
+def check_and_handle_load_failure(page):
+    """
+    Kiểm tra xem trang đăng ký có bị lỗi tải (không hiện danh sách lớp/checkbox/nút xác nhận) hay không.
+    Nếu bị lỗi (và không phải trang đăng nhập hay dashboard):
+    - Đợi 10 giây kèm theo bộ đếm ngược F5.
+    - Tiến hành page.reload() tải lại trang.
+    Trả về True nếu phát hiện lỗi và đã reload, ngược lại trả về False.
+    """
+    # 1. Nếu đang ở biểu mẫu đăng nhập, không làm gì cả để người dùng/hàm tự động đăng nhập xử lý
+    try:
+        if page.locator("input[type='password']").count() > 0 and page.locator("input[type='password']").first.is_visible():
+            return False
+    except Exception:
+        pass
+
+    # 2. Nếu đã ở trang đăng ký (có checkbox hoặc nút bấm xác nhận), tức là tải thành công
+    if is_on_registration_page(page):
+        return False
+
+    # 3. Kiểm tra xem có phải trang dashboard không
+    # Nếu trang dashboard hiển thị bình thường (có liên kết đến trang đăng ký), không tự động reload ở đây
+    # mà để ensure_registration_page xử lý việc click chuyển trang
+    nav_selectors = [
+        "a:has-text('Đăng ký học phần')",
+        "a:has-text('Đăng ký môn học')",
+        "a:has-text('Đăng ký')",
+        "a:has-text('Registration')",
+        "a:has-text('Register')",
+        "button:has-text('Đăng ký học phần')",
+        "button:has-text('Đăng ký môn học')",
+        "a[href*='registration']",
+        "a[href*='dang-ky']",
+        "#lnk-registration"
+    ]
+    
+    dashboard_visible = False
+    for selector in nav_selectors:
+        try:
+            link = page.locator(selector).first
+            if link.count() > 0 and link.is_visible():
+                dashboard_visible = True
+                break
+        except Exception:
+            pass
+
+    # 4. Xác định xem có phải trang bị lỗi tải không
+    # Lỗi tải khi: URL chứa từ khóa đăng ký/đã click chuyển tiếp (hoặc test mode),
+    # HOẶC không thấy thanh điều hướng dashboard (có thể là trang trắng, 502, 503...)
+    current_url = page.url.lower()
+    is_registration_url = any(keyword in current_url for keyword in ["dang-ky", "dangky", "registration", "register", "mock_register.html"])
+    
+    # Nếu không phải dashboard và (ở URL đăng ký hoặc không hiển thị thanh điều hướng/trang trắng/502)
+    if not dashboard_visible or is_registration_url:
+        # Chờ thêm 3 giây phòng trường hợp mạng chậm trang đang tải dở
+        page.wait_for_timeout(3000)
+        if is_on_registration_page(page):
+            return False
+
+        print("\n[-] Không load được danh sách lớp hoặc trang bị lỗi (502/503/Mất kết nối).")
+        for i in range(10, 0, -1):
+            print(f"[i] Sẽ tự động F5 tải lại trang sau {i} giây...", flush=True)
+            page.wait_for_timeout(1000)
+            
+        print("[i] Đang tiến hành F5 tải lại trang...")
+        try:
+            page.reload()
+            page.wait_for_timeout(2000) # Đợi 2 giây sau reload để trang bắt đầu tải
+        except Exception as e:
+            print(f"[-] Lỗi khi tải lại trang (F5): {e}")
+        return True
+
     return False
 
 def ensure_registration_page(page, target_url):
@@ -408,7 +583,7 @@ def main():
     headless = config.get("headless", False)
     auto_click_submit = config.get("auto_click_submit", True)
     scan_interval_ms = config.get("scan_interval_ms", 200)
-    submit_delay_ms = max(1000, config.get("submit_delay_ms", 5000))
+    submit_delay_ms = max(1500, config.get("submit_delay_ms", 5000))
     wait_for_empty_slot = config.get("wait_for_empty_slot", False)
 
     if args.test:
@@ -455,6 +630,14 @@ def main():
         if mode == "1":
             print("\n[>>>] CHẾ ĐỘ TỰ ĐỘNG QUÉT LIÊN TỤC ĐANG BẬT [<<<]")
             print("[i] Vui lòng đăng nhập và di chuyển đến trang chọn môn học.")
+            
+            # Hẹn giờ chờ mở đăng ký nếu được cấu hình
+            open_time_str = config.get("open_time", "")
+            if open_time_str:
+                # Đảm bảo trình duyệt đã ở trang đăng ký trước khi chờ
+                ensure_registration_page(page, target_url)
+                wait_until_open_time(page, open_time_str)
+                
             print(f"[i] Chương trình đang quét tìm các lớp học mỗi {scan_interval_ms}ms...")
             if not args.non_interactive:
                 print("[i] Nhấn Ctrl+C trong Terminal để tắt chương trình.")
@@ -479,6 +662,14 @@ def main():
                         
                     # Tự động điều hướng sang trang đăng ký học phần nếu cần
                     ensure_registration_page(page, target_url)
+                    
+                    # Kiểm tra và tự động F5 nếu không tải được danh sách lớp
+                    if check_and_handle_load_failure(page):
+                        continue
+                    
+                    if not is_on_registration_page(page):
+                        page.wait_for_timeout(scan_interval_ms)
+                        continue
                     
                     # Đánh giá trạng thái các lớp mục tiêu
                     stats = {
@@ -553,7 +744,7 @@ def main():
                             print(f"    - Không thể đăng ký (hết slot): {len(stats['OUT_OF_SLOTS'])} lớp {stats['OUT_OF_SLOTS']}")
                         if stats["NOT_FOUND"]:
                             print(f"    - Không tồn tại trên hệ thống: {len(stats['NOT_FOUND'])} lớp {stats['NOT_FOUND']}")
-                        print("[+] Chương trình tự động dừng và đóng trình duyệt.")
+                        print("[+] Chương trình tự động dừng quét và giữ trình duyệt mở.")
                         print("=======================================================")
                         registration_completed = True
                         break
@@ -668,18 +859,16 @@ def main():
                             send_desktop_notification("UIT Auto Registration", f"Đăng ký thành công lớp {code}!")
 
         if args.non_interactive:
-            if not registration_completed:
-                print("\n[i] Đang giữ trình duyệt mở. Hãy theo dõi tiến trình. Đóng cửa sổ Web UI để dừng.")
-                try:
-                    # Giữ trình duyệt mở tối đa 2 tiếng
-                    for _ in range(7200):
-                        page.wait_for_timeout(1000)
-                except (KeyboardInterrupt, SystemExit):
-                    pass
+            print("\n[i] Đang giữ trình duyệt mở. Hãy theo dõi tiến trình. Đóng cửa sổ Web UI để dừng.")
+            try:
+                # Giữ trình duyệt mở tối đa 2 tiếng
+                for _ in range(7200):
+                    page.wait_for_timeout(1000)
+            except (KeyboardInterrupt, SystemExit):
+                pass
         else:
-            if not registration_completed:
-                print("\n[i] Trình duyệt sẽ mở cho đến khi bạn nhấn ENTER tại cửa sổ Terminal này để đóng.")
-                input("===> Nhấn [ENTER] tại đây để ĐÓNG trình duyệt và kết thúc chương trình <===")
+            print("\n[i] Trình duyệt sẽ mở cho đến khi bạn nhấn ENTER tại cửa sổ Terminal này để đóng.")
+            input("===> Nhấn [ENTER] tại đây để ĐÓNG trình duyệt và kết thúc chương trình <===")
         
         browser.close()
         print("[+] Hoàn tất chương trình.")

@@ -571,6 +571,11 @@
                     </div>
                 </div>
 
+                <div class="form-group">
+                    <label for="openTime">Giờ mở cổng đăng ký (Định dạng HH:MM hoặc HH:MM:SS, để trống nếu chạy ngay)</label>
+                    <input type="text" id="openTime" placeholder="Ví dụ: 09:00 hoặc 08:59:59">
+                </div>
+
                 <div class="toggle-group">
                     <label for="headless">Chế độ ẩn danh (Không hiện Chrome)</label>
                     <label class="switch">
@@ -682,6 +687,7 @@
                 document.getElementById('headless').checked = !!data.headless;
                 document.getElementById('autoSubmit').checked = !!data.auto_click_submit;
                 document.getElementById('waitEmptySlot').checked = !!data.wait_for_empty_slot;
+                document.getElementById('openTime').value = data.open_time || '';
             } catch (err) {
                 showToast('Không thể tải cấu hình!', true);
             }
@@ -694,8 +700,8 @@
             const classCodes = rawClassCodes.split(/[\n,]+/).map(c => c.trim()).filter(c => c);
 
             const submit_delay_ms = parseInt(document.getElementById('submitDelay').value) || 0;
-            if (submit_delay_ms < 1000) {
-                showToast('Độ trễ gửi đăng ký tối thiểu phải là 1000ms!', true);
+            if (submit_delay_ms < 1500) {
+                showToast('Độ trễ gửi đăng ký tối thiểu phải là 1500ms!', true);
                 return;
             }
 
@@ -708,7 +714,8 @@
                 submit_delay_ms: submit_delay_ms,
                 headless: document.getElementById('headless').checked,
                 auto_click_submit: document.getElementById('autoSubmit').checked,
-                wait_for_empty_slot: document.getElementById('waitEmptySlot').checked
+                wait_for_empty_slot: document.getElementById('waitEmptySlot').checked,
+                open_time: document.getElementById('openTime').value.trim()
             };
 
             try {

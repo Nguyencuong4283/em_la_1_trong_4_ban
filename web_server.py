@@ -43,8 +43,9 @@ class ConfigSchema(BaseModel):
     headless: bool
     auto_click_submit: bool
     scan_interval_ms: int
-    submit_delay_ms: int = Field(ge=1000)
+    submit_delay_ms: int = Field(ge=1500)
     wait_for_empty_slot: bool = False
+    open_time: str = ""
 
 def load_config_data():
     default_config = {
@@ -56,7 +57,8 @@ def load_config_data():
         "auto_click_submit": True,
         "scan_interval_ms": 5000,
         "submit_delay_ms": 1500,
-        "wait_for_empty_slot": False
+        "wait_for_empty_slot": False,
+        "open_time": ""
     }
     if not os.path.exists(CONFIG_PATH):
         try:
